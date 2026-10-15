@@ -80,7 +80,7 @@ class TrackingController extends Controller
         // 1. Validasi Hak Akses Peran Aktor (UC-07 Extension 4a & TC-UC07-03)
         // Peran berwenang: Pokja Pemilihan (tender) dan Pejabat Pengadaan (non-tender).
         // Peran pemantau (PPK, PA/KPA, Admin Sistem) ditolak dengan HTTP 403 Forbidden.
-        $peran = trim($request->input('peran', 'Pokja Pemilihan'));
+        $peran = auth()->check() ? auth()->user()->role : trim($request->input('peran', 'Pokja Pemilihan'));
         $authorizedRoles = ['Pokja Pemilihan', 'Pejabat Pengadaan'];
 
         if (!in_array($peran, $authorizedRoles)) {
@@ -100,22 +100,40 @@ class TrackingController extends Controller
             'keterangan.max' => 'Keterangan maksimal 1000 karakter.',
         ]);
 
-        $petugas = trim($request->input('petugas', $request->input('nama', '')));
+        $petugas = auth()->check() ? auth()->user()->name : trim($request->input('petugas', $request->input('nama', '')));
         if (empty($petugas)) {
             throw ValidationException::withMessages([
                 'petugas' => 'Nama petugas / Pokja wajib diisi.',
             ]);
         }
 
-        // 3. Validasi Urutan Tahapan Mundur (UC-07 Extension 6a & TC-UC07-04)
+        // 3. Validasi Urutan Tahapan: Sekuensial (tidak boleh mundur, tidak boleh sama, dan tidak boleh melompati tahapan)
         $tahapanList = PaketPengadaan::TAHAPAN_LIST;
         $currentIndex = array_search($paket->tahapan_sekarang, $tahapanList);
         $newIndex = array_search($validated['tahapan'], $tahapanList);
 
-        if ($currentIndex !== false && $newIndex !== false && $newIndex < $currentIndex) {
-            throw ValidationException::withMessages([
-                'tahapan' => 'Tahapan tidak boleh dimundurkan. Tahapan saat ini adalah ' . $paket->tahapan_sekarang . '.',
-            ]);
+        if ($currentIndex !== false && $newIndex !== false) {
+            // Larangan tahapan mundur (UC-07 Extension 6a & TC-UC07-04)
+            if ($newIndex < $currentIndex) {
+                throw ValidationException::withMessages([
+                    'tahapan' => 'Tahapan tidak boleh dimundurkan. Tahapan saat ini adalah ' . $paket->tahapan_sekarang . '.',
+                ]);
+            }
+
+            // Larangan update ke tahapan yang sama
+            if ($newIndex === $currentIndex) {
+                throw ValidationException::withMessages([
+                    'tahapan' => 'Paket pengadaan sudah berada pada tahapan ' . $paket->tahapan_sekarang . '. Silakan pilih tahapan selanjutnya.',
+                ]);
+            }
+
+            // Larangan melompati tahapan (UC-07 Extension 6a: tahapan tidak sesuai urutan)
+            if ($newIndex > $currentIndex + 1) {
+                $nextExpected = $tahapanList[$currentIndex + 1];
+                throw ValidationException::withMessages([
+                    'tahapan' => 'Tahapan pengadaan harus dilalui secara berurutan sesuai tata kelola PBJ. Anda harus menyelesaikan tahapan "' . $nextExpected . '" terlebih dahulu sebelum melanjutkan ke "' . $validated['tahapan'] . '".',
+                ]);
+            }
         }
 
         // 4. Eksekusi Perubahan di Database Secara Atomik (DB::transaction)

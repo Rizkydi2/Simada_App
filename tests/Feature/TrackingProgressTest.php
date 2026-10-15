@@ -190,4 +190,73 @@ class TrackingProgressTest extends TestCase
             'keterangan' => 'Mencoba memundurkan tahapan ke Perencanaan',
         ]);
     }
+
+    /**
+     * TC-UC07-05: Sesi login peran pemantau (PPK) otomatis menyembunyikan tombol aksi dan menolak update tahapan.
+     */
+    public function test_tc_uc07_05_sesi_login_ppk_otomatis_tidak_bisa_update_tahapan(): void
+    {
+        $ppk = \App\Models\User::firstOrCreate(
+            ['email' => 'budi.santoso@kebumenkab.go.id'],
+            [
+                'name' => 'Budi Santoso',
+                'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+                'role' => 'PPK',
+                'status' => 'Aktif',
+            ]
+        );
+
+        $paket = PaketPengadaan::where('kode_paket', 'PKT-001')->first();
+        $this->assertNotNull($paket);
+
+        // 1. Pada tampilan, tombol Update Tahapan tidak ada untuk peran PPK
+        $viewResponse = $this->actingAs($ppk)->get('/tracking?paket_id=' . $paket->id);
+        $viewResponse->assertStatus(200);
+        $viewResponse->assertDontSee('Update Tahapan');
+
+        // 2. Jika PPK memaksa request POST /tracking/{id}/update, sistem tolak dengan 403 Forbidden
+        $postData = [
+            'tahapan' => 'Penetapan',
+            'keterangan' => 'Mencoba paksa update tahapan oleh PPK',
+        ];
+        $postResponse = $this->actingAs($ppk)->post('/tracking/' . $paket->id . '/update', $postData);
+        $postResponse->assertStatus(403);
+    }
+
+    /**
+     * TC-UC07-06: Validasi larangan melompati tahapan pengadaan (Extension 6a UC-07).
+     * Prosedur: Paket berada pada tahap Evaluasi (index 2). Pokja mencoba melompat langsung ke Selesai (index 4)
+     * tanpa melalui Penetapan (index 3).
+     * Hasil yang Diharapkan: Sistem menolak pembaruan dan menampilkan pesan galat bahwa tahapan
+     * harus dilalui secara berurutan dan tidak boleh melompati Penetapan.
+     */
+    public function test_tc_uc07_06_validasi_larangan_melompati_tahapan(): void
+    {
+        $paket = PaketPengadaan::where('kode_paket', 'PKT-001')->first();
+        $this->assertNotNull($paket);
+        $this->assertEquals('Evaluasi', $paket->tahapan_sekarang);
+
+        // Pokja mencoba lompat langsung ke 'Selesai' melewati 'Penetapan'
+        $postData = [
+            'tahapan' => 'Selesai',
+            'peran' => 'Pokja Pemilihan',
+            'petugas' => 'Siti Rahma',
+            'keterangan' => 'Mencoba lompat langsung ke Selesai tanpa Penetapan',
+        ];
+
+        $response = $this->post('/tracking/' . $paket->id . '/update', $postData);
+
+        // Sistem menolak dan mengembalikan error validasi pada field 'tahapan'
+        $response->assertSessionHasErrors(['tahapan']);
+
+        // Pastikan status di database tetap 'Evaluasi'
+        $paket->refresh();
+        $this->assertEquals('Evaluasi', $paket->tahapan_sekarang);
+
+        // Pastikan tidak ada log 'Selesai' yang tersimpan
+        $this->assertDatabaseMissing('tb_tracking_progress', [
+            'paket_id' => $paket->id,
+            'tahapan' => 'Selesai',
+        ]);
+    }
 }

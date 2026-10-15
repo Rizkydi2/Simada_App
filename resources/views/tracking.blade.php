@@ -72,9 +72,16 @@
     @if ($paket)
         <!-- Stepper 5 Tahapan (Perencanaan, Pengumuman, Evaluasi, Penetapan, Selesai) -->
         <div class="steps">
+            @php
+                $isAllCompleted = strcasecmp($paket->tahapan_sekarang, 'Selesai') === 0;
+            @endphp
             @foreach ($tahapanList as $i => $step)
-                <div class="step {{ $i < $aktifIndex ? 'done' : ($i === $aktifIndex ? 'active' : '') }}">
-                    <i class="bi {{ $i < $aktifIndex ? 'bi-check-circle-fill' : $step['icon'] }}"></i>
+                @php
+                    $isDone = $isAllCompleted ? true : ($i < $aktifIndex);
+                    $isActive = !$isAllCompleted && ($i === $aktifIndex);
+                @endphp
+                <div class="step {{ $isDone ? 'done' : ($isActive ? 'active' : '') }}">
+                    <i class="bi {{ $isDone ? 'bi-check-circle-fill' : $step['icon'] }}"></i>
                     {{ $step['nama'] }}
                 </div>
             @endforeach
@@ -115,12 +122,32 @@
             </table>
         </div>
 
+        @php
+            $currentRole = Auth::check() ? Auth::user()->role : null;
+            $isSelesai = $paket->tahapan_sekarang === 'Selesai';
+            $isEksekutor = is_null($currentRole) || in_array($currentRole, ['Pokja Pemilihan', 'Pejabat Pengadaan']);
+            $canUpdateTahapan = $isEksekutor && !$isSelesai;
+        @endphp
+
         <div class="form-actions">
-            <button type="button" class="btn btn-dark" onclick="openUpdateModal()">
-                <i class="bi bi-arrow-repeat"></i> Update Tahapan
-            </button>
+            @if ($isSelesai)
+                <div style="display: inline-flex; align-items: center; gap: 8px; color: var(--green-dark); font-size: 13px; padding: 10px 18px; background: var(--green-soft); border-radius: 999px;">
+                    <i class="bi bi-check-circle-fill"></i>
+                    Seluruh tahapan paket pengadaan telah <b>Selesai (Tuntas)</b>. Tidak ada tahapan lanjutan.
+                </div>
+            @elseif ($canUpdateTahapan)
+                <button type="button" class="btn btn-dark" onclick="openUpdateModal()">
+                    <i class="bi bi-arrow-repeat"></i> Update Tahapan
+                </button>
+            @else
+                <div style="display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 10px 18px; background: var(--shell); border-radius: 999px;">
+                    <i class="bi bi-shield-lock" style="color: var(--amber);"></i>
+                    Peran Anda sebagai <b>{{ $currentRole }}</b> berwenang sebagai <u>Pemantau Progres</u> (hanya Pokja Pemilihan & Pejabat Pengadaan yang dapat memperbarui tahapan).
+                </div>
+            @endif
         </div>
 
+        @if ($canUpdateTahapan)
         <!-- Modal Update Tahapan -->
         <div id="modalUpdateTahapan" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center; padding: 20px;">
             <div class="card" style="width: 100%; max-width: 520px; box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.35); border-radius: var(--radius); position: relative;">
@@ -140,29 +167,55 @@
                         <div class="field">
                             <label for="tahapan">Tahapan <span style="color: var(--red);">*</span></label>
                             <select class="select" id="tahapan" name="tahapan" required>
-                                @foreach ($tahapanList as $item)
-                                    <option value="{{ $item['nama'] }}" {{ (old('tahapan') ?? $paket->tahapan_sekarang) === $item['nama'] ? 'selected' : '' }}>
-                                        {{ $item['nama'] }}
-                                    </option>
+                                @foreach ($tahapanList as $i => $item)
+                                    @if ($i === $aktifIndex + 1)
+                                        <option value="{{ $item['nama'] }}" selected>
+                                            {{ $item['nama'] }}
+                                        </option>
+                                    @elseif ($i > $aktifIndex + 1)
+                                        <option value="{{ $item['nama'] }}" disabled style="color: var(--muted);">
+                                            {{ $item['nama'] }} (terkunci)
+                                        </option>
+                                    @elseif ($i <= $aktifIndex)
+                                        <option value="{{ $item['nama'] }}" disabled style="color: var(--muted);">
+                                            {{ $item['nama'] }} (selesai)
+                                        </option>
+                                    @endif
                                 @endforeach
                             </select>
+                            <small style="color: var(--muted); font-size: 12px;">Sesuai tata kelola PBJ, tahapan wajib dilalui secara berurutan dan tidak boleh dilompati.</small>
                         </div>
 
-                        <div class="field">
-                            <label for="peran">Peran <span style="color: var(--red);">*</span></label>
-                            <select class="select" id="peran" name="peran" required>
-                                <option value="Pokja Pemilihan" {{ old('peran', 'Pokja Pemilihan') === 'Pokja Pemilihan' ? 'selected' : '' }}>Pokja Pemilihan (Berwenang)</option>
-                                <option value="Pejabat Pengadaan" {{ old('peran') === 'Pejabat Pengadaan' ? 'selected' : '' }}>Pejabat Pengadaan (Berwenang)</option>
-                                <option value="PPK" {{ old('peran') === 'PPK' ? 'selected' : '' }}>PPK (Peran Pemantau)</option>
-                                <option value="PA/KPA" {{ old('peran') === 'PA/KPA' ? 'selected' : '' }}>PA/KPA (Peran Pemantau)</option>
-                                <option value="Admin Sistem" {{ old('peran') === 'Admin Sistem' ? 'selected' : '' }}>Admin Sistem (Peran Pemantau)</option>
-                            </select>
-                        </div>
+                        @if (Auth::check())
+                            <input type="hidden" name="peran" value="{{ Auth::user()->role }}">
+                            <input type="hidden" name="petugas" value="{{ Auth::user()->name }}">
+                            <div class="field">
+                                <label>Petugas & Peran Aktor (Terotentikasi)</label>
+                                <div style="display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #fafafa; border: 1px solid var(--line); border-radius: 14px;">
+                                    <i class="bi bi-person-badge-fill" style="font-size: 20px; color: var(--dark);"></i>
+                                    <div>
+                                        <b>{{ Auth::user()->name }}</b>
+                                        <span class="badge blue" style="margin-left: 8px;">{{ Auth::user()->role }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <div class="field">
+                                <label for="peran">Peran <span style="color: var(--red);">*</span></label>
+                                <select class="select" id="peran" name="peran" required>
+                                    <option value="Pokja Pemilihan" {{ old('peran', 'Pokja Pemilihan') === 'Pokja Pemilihan' ? 'selected' : '' }}>Pokja Pemilihan (Berwenang)</option>
+                                    <option value="Pejabat Pengadaan" {{ old('peran') === 'Pejabat Pengadaan' ? 'selected' : '' }}>Pejabat Pengadaan (Berwenang)</option>
+                                    <option value="PPK" {{ old('peran') === 'PPK' ? 'selected' : '' }}>PPK (Peran Pemantau)</option>
+                                    <option value="PA/KPA" {{ old('peran') === 'PA/KPA' ? 'selected' : '' }}>PA/KPA (Peran Pemantau)</option>
+                                    <option value="Admin Sistem" {{ old('peran') === 'Admin Sistem' ? 'selected' : '' }}>Admin Sistem (Peran Pemantau)</option>
+                                </select>
+                            </div>
 
-                        <div class="field">
-                            <label for="petugas">Nama <span style="color: var(--red);">*</span></label>
-                            <input class="input" type="text" id="petugas" name="petugas" placeholder="Contoh: Pokja Pemilihan 1" value="{{ old('petugas') }}" required>
-                        </div>
+                            <div class="field">
+                                <label for="petugas">Nama <span style="color: var(--red);">*</span></label>
+                                <input class="input" type="text" id="petugas" name="petugas" placeholder="Contoh: Pokja Pemilihan 1" value="{{ old('petugas') }}" required>
+                            </div>
+                        @endif
 
                         <div class="field">
                             <label for="keterangan">Keterangan <span style="color: var(--red);">*</span></label>
@@ -179,6 +232,7 @@
                 </form>
             </div>
         </div>
+        @endif
     @else
         <div style="text-align: center; padding: 48px 20px; color: var(--muted);">
             <i class="bi bi-inbox" style="font-size: 48px; display: block; margin-bottom: 12px;"></i>
