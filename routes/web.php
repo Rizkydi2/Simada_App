@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\TrackingController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('login'));
@@ -17,7 +18,8 @@ Route::get('/paket', fn () => view('paket.index'))->name('paket.index');
 Route::get('/paket/tambah', fn () => view('paket.create'))->name('paket.create');
 
 // WF-05 Tracking Progres
-Route::get('/tracking', fn () => view('tracking'))->name('tracking');
+Route::get('/tracking', [TrackingController::class, 'index'])->name('tracking');
+Route::post('/tracking/{id}/update', [TrackingController::class, 'updateTahapan'])->name('tracking.update');
 
 // WF-06 Verifikasi
 Route::get('/verifikasi', fn () => view('verifikasi'))->name('verifikasi');
