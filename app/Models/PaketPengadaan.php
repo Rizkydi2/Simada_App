@@ -63,4 +63,12 @@ class PaketPengadaan extends Model
     {
         return $this->hasMany(TrackingProgress::class, 'paket_id', 'id')->orderBy('created_at', 'asc');
     }
+
+    /**
+     * Relasi One-to-Many ke PenugasanPersonel (M:N ke Tenaga Ahli).
+     */
+    public function penugasanPersonel(): HasMany
+    {
+        return $this->hasMany(PenugasanPersonel::class, 'paket_id', 'id');
+    }
 }

@@ -13,14 +13,37 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     /**
+     * 5 Peran Pengguna Berbasis RBAC sesuai Dokumen SDD & SRS SIMADA
+     */
+    public const ROLES = [
+        'Admin Sistem',
+        'PPK',
+        'Pokja Pemilihan',
+        'Pejabat Pengadaan',
+        'PA/KPA',
+    ];
+
+    /**
+     * Status Akun Pengguna
+     */
+    public const STATUSES = [
+        'Aktif',
+        'Nonaktif',
+    ];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
      */
     protected $fillable = [
         'name',
+        'nip',
         'email',
         'password',
+        'role',
+        'opd',
+        'status',
     ];
 
     /**
